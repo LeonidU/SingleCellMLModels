@@ -50,7 +50,7 @@ def load_data(mtx_path, colnames_path, cells_path, rownames_path, features_path)
     # Filter rows based on features
     valid_row_indices = [i for i, row in enumerate(row_names) if row in features]
     mtx = mtx[valid_row_indices, :]
-    input_size = mtx.shape[1]
+    input_size = mtx.shape[0]
 
     dataset = MTXDataset(mtx, col_names, cells[['column', 'type_encoded']])
     return input_features, input_size, dataset

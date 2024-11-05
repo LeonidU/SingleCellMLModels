@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 import cell_sampling
 # Define the 1D CNN model
 class CNN1DClassifier(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, input_length, num_classes=21):
         super(CNN1DClassifier, self).__init__()
         self.conv1 = nn.Conv1d(in_channels=1, out_channels=16, kernel_size=3, padding=1)
         self.conv2 = nn.Conv1d(in_channels=16, out_channels=32, kernel_size=3, padding=1)
@@ -13,7 +13,10 @@ class CNN1DClassifier(nn.Module):
         self.relu = nn.ReLU()
         self.maxpool = nn.MaxPool1d(kernel_size=2)
         self.flatten = nn.Flatten()
-        self.fc1 = nn.Linear(64 * (input_length // 8), 128)  # Adjust input_length accordingly
+
+        # Calculate the output length after convolutions and pooling
+        conv_output_length = input_length // 8
+        self.fc1 = nn.Linear(64 * conv_output_length, 128)
         self.fc2 = nn.Linear(128, num_classes)
         self.softmax = nn.Softmax(dim=1)
 
@@ -31,6 +34,7 @@ class CNN1DClassifier(nn.Module):
         x = self.softmax(x)
         return x
 
+
 # Initialize the model, loss function, and optimizer
 
 mtx_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx"
@@ -39,9 +43,11 @@ cells_path = "../E-ANND-2/E-ANND-2.cells.txt"
 rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
 features_path = "Hsapiens_features.txt"
 num_classes, input_length, dataset = cell_sampling.load_data(mtx_path, colnames_path, cells_path, rownames_path, features_path)
+print(num_classes)
+print(input_length)
 dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
 
-model = CNN1DClassifier(num_classes=num_classes)
+model = CNN1DClassifier(input_length=input_length,  num_classes=num_classes)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
