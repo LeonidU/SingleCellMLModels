@@ -54,21 +54,20 @@ def load_data(mtx_path, colnames_path, cells_path, rownames_path, features_path)
     dataset = MTXDataset(mtx, col_names, cells[['column', 'type_encoded']])
     return dataset
 
-if __name__ == "__main__":
-    mtx_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx"
-    colnames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_cols"
-    cells_path = "../E-ANND-2/E-ANND-2.cells.txt"
-    rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
-    features_path = "Hsapiens_features.txt"
-    
-    dataset = load_data(mtx_path, colnames_path, cells_path, rownames_path, features_path)
-    
-    # Create DataLoader
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
-    
-    # Sample one batch from DataLoader
-    for X, y in dataloader:
-        print("Sampled Column Data (X):", X.flatten().numpy())
-        print("Column Type (y):", y.item())
-        break
+#if __name__ == "__main__":
+#    mtx_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx"
+#    colnames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_cols"
+#    cells_path = "../E-ANND-2/E-ANND-2.cells.txt"
+#    rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
+#    features_path = "Hsapiens_features.txt"    
+#    dataset = load_data(mtx_path, colnames_path, cells_path, rownames_path, features_path)
+#    
+#    # Create DataLoader
+#    dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
+#    
+#    # Sample one batch from DataLoader
+#    for X, y in dataloader:
+#        print("Sampled Column Data (X):", X.flatten().numpy())
+#        print("Column Type (y):", y.item())
+#        break
 
