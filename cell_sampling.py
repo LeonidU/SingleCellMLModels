@@ -34,7 +34,7 @@ def load_data(mtx_path, colnames_path, cells_path, rownames_path, features_path)
     cells = pd.read_csv(cells_path, sep='\t', header=0)
     cells = cells[['Cell ID', 'inferred cell type - ontology labels']]
     cells.columns = ['column', 'type']
-    
+    input_features = len(set(cells["type"]))
     # Encode cell types
     label_encoder = LabelEncoder()
     cells['type_encoded'] = label_encoder.fit_transform(cells['type'])
@@ -50,9 +50,10 @@ def load_data(mtx_path, colnames_path, cells_path, rownames_path, features_path)
     # Filter rows based on features
     valid_row_indices = [i for i, row in enumerate(row_names) if row in features]
     mtx = mtx[valid_row_indices, :]
-    
+    input_size = mtx.shape[1]
+
     dataset = MTXDataset(mtx, col_names, cells[['column', 'type_encoded']])
-    return dataset
+    return input_features, input_size, dataset
 
 #if __name__ == "__main__":
 #    mtx_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx"

@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 import cell_sampling
 # Define the 1D CNN model
 class CNN1DClassifier(nn.Module):
-    def __init__(self, num_classes=21):
+    def __init__(self, num_classes):
         super(CNN1DClassifier, self).__init__()
         self.conv1 = nn.Conv1d(in_channels=1, out_channels=16, kernel_size=3, padding=1)
         self.conv2 = nn.Conv1d(in_channels=16, out_channels=32, kernel_size=3, padding=1)
@@ -38,15 +38,15 @@ colnames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_
 cells_path = "../E-ANND-2/E-ANND-2.cells.txt"
 rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
 features_path = "Hsapiens_features.txt"
-dataset = cell_sampling.load_data(mtx_path, colnames_path, cells_path, rownames_path, features_path)
-dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
+num_classes, input_length, dataset = cell_sampling.load_data(mtx_path, colnames_path, cells_path, rownames_path, features_path)
+dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
 
 model = CNN1DClassifier(num_classes=num_classes)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Training loop
-def train_model(model, dataloader, criterion, optimizer, num_epochs=10):
+def train_model(model, dataloader, criterion, optimizer, num_epochs=20):
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
