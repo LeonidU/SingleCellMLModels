@@ -17,7 +17,7 @@ class CNN1DClassifier(nn.Module):
         self.conv2 = nn.Conv1d(in_channels=16, out_channels=32, kernel_size=3, padding=1)
         self.conv3 = nn.Conv1d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
         self.relu = nn.ReLU()
-        self.maxpool = nn.MaxPool1d(kernel_size=2)
+        self.maxpool = nn.MaxPool1d(kernel_size=2, stride=1)
         self.flatten = nn.Flatten()
         self.drop1 = nn.Dropout(0.5)
         # Calculate the output length after convolutions and pooling
@@ -30,6 +30,7 @@ class CNN1DClassifier(nn.Module):
         x = x.unsqueeze(1)  # Add channel dimension
         x = self.relu(self.conv1(x))
         x = self.maxpool(x)
+        x = self.drop1(x)
         x = self.relu(self.conv2(x))
         x = self.maxpool(x)
         x = self.relu(self.conv3(x))
@@ -61,7 +62,7 @@ features_path = "Hsapiens_features.txt"
 num_classes, input_length, dataset = cell_sampling.load_data(mtx_path, colnames_path, cells_path, rownames_path, features_path)
 print(num_classes)
 print(input_length)
-#dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -137,7 +138,7 @@ def evaluate_model(model, test_loader):
     print(f"Test Recall: {recall:.4f}")
     print(f"Test F1 Score: {f1:.4f}")
 
-train_loader, test_loader = split_dataset(dataset)
-train_model(model, train_loader, criterion, optimizer, num_epochs=10)
-evaluate_model(model, test_loader)
+#train_loader, test_loader = split_dataset(dataset)
+train_model(model, dataloader, criterion, optimizer, num_epochs=10)
+#evaluate_model(model, test_loader)
 
