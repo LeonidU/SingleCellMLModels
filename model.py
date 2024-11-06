@@ -5,6 +5,8 @@ from torch.utils.data import DataLoader
 from sklearn.metrics import roc_auc_score
 import cell_sampling
 import numpy as np
+
+import torch.nn.functional as F
 # Define the 1D CNN model
 class CNN1DClassifier(nn.Module):
     def __init__(self, input_length, num_classes):
@@ -15,7 +17,7 @@ class CNN1DClassifier(nn.Module):
         self.relu = nn.ReLU()
         self.maxpool = nn.MaxPool1d(kernel_size=2)
         self.flatten = nn.Flatten()
-
+        self.drop1 = nn.Dropout(0.5)
         # Calculate the output length after convolutions and pooling
         conv_output_length = input_length // 8
         self.fc1 = nn.Linear(64 * conv_output_length, 128)
@@ -36,6 +38,11 @@ class CNN1DClassifier(nn.Module):
 #        x = self.softmax(x)
 #        print("Iteration over")
         return x
+
+def split_dataset(dataset, train_ratio=0.8):
+    train_size = int(train_ratio * len(dataset))
+    test_size = len(dataset) - train_size
+    return random_split(dataset, [train_size, test_size])
 
 
 # Initialize the model, loss function, and optimizer
@@ -84,7 +91,8 @@ def train_model(model, dataloader, criterion, optimizer, num_epochs=20):
             loss.backward()
             optimizer.step()
             all_labels.extend(labels.cpu().numpy())
-            all_outputs.extend(outputs.cpu().detach().numpy())
+#            all_outputs.extend(outputs.cpu().detach().numpy())
+            all_outputs.extend(F.softmax(outputs, dim=1).cpu().detach().numpy())
             running_loss += loss.item()
 
         epoch_loss = running_loss / len(dataloader.dataset)
@@ -95,4 +103,37 @@ def train_model(model, dataloader, criterion, optimizer, num_epochs=20):
         print(f'AUC {auc}')
     torch.save(model.state_dict(), "convnet1d_model.pth")
 
-train_model(model, dataloader, criterion, optimizer, num_epochs=100)
+def evaluate_model(model, test_loader):
+    model.eval()
+    all_labels = []
+    all_outputs = []
+    with torch.no_grad():
+        for vectors, labels in test_loader:
+            vectors, labels = vectors.to(device), labels.to(device)
+
+            # Forward pass
+            outputs = model(vectors)
+            all_labels.extend(labels.cpu().numpy())
+            all_outputs.extend(F.softmax(outputs, dim=1).cpu().numpy())
+
+    # Convert outputs to predicted labels
+    all_outputs_np = np.array(all_outputs)
+    all_labels_np = np.array(all_labels)
+    predicted_labels = np.argmax(all_outputs_np, axis=1)
+
+    # Calculate metrics
+    auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
+    accuracy = accuracy_score(all_labels_np, predicted_labels)
+    precision = precision_score(all_labels_np, predicted_labels, average='weighted')
+    recall = recall_score(all_labels_np, predicted_labels, average='weighted')
+    f1 = f1_score(all_labels_np, predicted_labels, average='weighted')
+
+    print(f"Test AUC: {auc:.4f}")
+    print(f"Test Accuracy: {accuracy:.4f}")
+    print(f"Test Precision: {precision:.4f}")
+    print(f"Test Recall: {recall:.4f}")
+    print(f"Test F1 Score: {f1:.4f}")
+
+train_loader, test_loader = split_dataset(dataloader)
+train_model(model, train_loader, criterion, optimizer, num_epochs=10)
+evaluate_model(model, test_loader)
