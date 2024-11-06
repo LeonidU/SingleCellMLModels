@@ -81,7 +81,8 @@ def train_model(model, dataloader, criterion, optimizer, num_epochs=20):
         for inputs, labels in dataloader:
             # Move data to the device (GPU or CPU)
 #            inputs, labels = inputs.float(), labels
-            inputs, labels = inputs.permute(0, 2, 1).float().to(device), labels.long().to(device)
+#            inputs, labels = inputs.permute(0, 2, 1).float().to(device), labels.long().to(device)
+            inputs, labels = inputs.float().to(device), labels.long().to(device)
             # Zero the gradient
             optimizer.zero_grad()
 
