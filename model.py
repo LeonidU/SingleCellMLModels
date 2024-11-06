@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
-from sklearn.metrics import roc_auc_score
+#from torch.utils.data import DataLoader, random_split
+#from sklearn.metrics import roc_auc_score
+from torch.utils.data import DataLoader, random_split
+from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score, f1_score
 import cell_sampling
 import numpy as np
 
@@ -11,7 +13,7 @@ import torch.nn.functional as F
 class CNN1DClassifier(nn.Module):
     def __init__(self, input_length, num_classes):
         super(CNN1DClassifier, self).__init__()
-        self.conv1 = nn.Conv1d(in_channels=1, out_channels=16, kernel_size=3, padding=1)
+        self.conv1 = nn.Conv1d(in_channels=input_length, out_channels=16, kernel_size=3, padding=1)
         self.conv2 = nn.Conv1d(in_channels=16, out_channels=32, kernel_size=3, padding=1)
         self.conv3 = nn.Conv1d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
         self.relu = nn.ReLU()
@@ -59,7 +61,7 @@ features_path = "Hsapiens_features.txt"
 num_classes, input_length, dataset = cell_sampling.load_data(mtx_path, colnames_path, cells_path, rownames_path, features_path)
 print(num_classes)
 print(input_length)
-dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+#dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -79,7 +81,7 @@ def train_model(model, dataloader, criterion, optimizer, num_epochs=20):
         for inputs, labels in dataloader:
             # Move data to the device (GPU or CPU)
 #            inputs, labels = inputs.float(), labels
-            inputs, labels = inputs.float().to(device), labels.long().to(device)
+            inputs, labels = inputs.permute(0, 2, 1).float().to(device), labels.long().to(device)
             # Zero the gradient
             optimizer.zero_grad()
 
@@ -134,6 +136,7 @@ def evaluate_model(model, test_loader):
     print(f"Test Recall: {recall:.4f}")
     print(f"Test F1 Score: {f1:.4f}")
 
-train_loader, test_loader = split_dataset(dataloader)
+train_loader, test_loader = split_dataset(dataset)
 train_model(model, train_loader, criterion, optimizer, num_epochs=10)
 evaluate_model(model, test_loader)
+
