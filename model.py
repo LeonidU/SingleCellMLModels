@@ -74,41 +74,6 @@ model = model.to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-# Training loop
-def train_model(model, dataloader, criterion, optimizer, num_epochs=20):
-    model.train()
-    for epoch in range(num_epochs):
-        running_loss = 0.0
-        all_labels = []
-        all_outputs = []
-        for inputs, labels in dataloader:
-            # Move data to the device (GPU or CPU)
-#            inputs, labels = inputs.float(), labels
-#            inputs, labels = inputs.permute(0, 2, 1).float().to(device), labels.long().to(device)
-            inputs, labels = inputs.float().to(device), labels.long().to(device)
-            # Zero the gradient
-            optimizer.zero_grad()
-
-            # Forward pass
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-
-            # Backward pass and optimization
-            loss.backward()
-            optimizer.step()
-            all_labels.extend(labels.cpu().numpy())
-#            all_outputs.extend(outputs.cpu().detach().numpy())
-            all_outputs.extend(F.softmax(outputs, dim=1).cpu().detach().numpy())
-            running_loss += loss.item()
-
-        epoch_loss = running_loss / len(dataloader.dataset)
-        print(f'Epoch {epoch+1}, Loss: {epoch_loss:.4f}')
-        all_outputs_np = np.array(all_outputs)
-        all_labels_np = np.array(all_labels)
-        auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
-        print(f'AUC {auc}')
-    torch.save(model.state_dict(), "convnet1d_model.pth")
-
 def evaluate_model(model, test_loader):
     model.eval()
     all_labels = []
@@ -140,8 +105,46 @@ def evaluate_model(model, test_loader):
     print(f"Test Recall: {recall:.4f}")
     print(f"Test F1 Score: {f1:.4f}")
 
+
+# Training loop
+def train_model(model, dataloader, test_dataset, criterion, optimizer, num_epochs=20):
+    model.train()
+    for epoch in range(num_epochs):
+        running_loss = 0.0
+        all_labels = []
+        all_outputs = []
+        for inputs, labels in dataloader:
+            # Move data to the device (GPU or CPU)
+#            inputs, labels = inputs.float(), labels
+#            inputs, labels = inputs.permute(0, 2, 1).float().to(device), labels.long().to(device)
+            inputs, labels = inputs.float().to(device), labels.long().to(device)
+            # Zero the gradient
+            optimizer.zero_grad()
+
+            # Forward pass
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+
+            # Backward pass and optimization
+            loss.backward()
+            optimizer.step()
+            all_labels.extend(labels.cpu().numpy())
+#            all_outputs.extend(outputs.cpu().detach().numpy())
+            all_outputs.extend(F.softmax(outputs, dim=1).cpu().detach().numpy())
+            running_loss += loss.item()
+
+        epoch_loss = running_loss / len(dataloader.dataset)
+        print(f'Epoch {epoch+1}, Loss: {epoch_loss:.4f}')
+#        all_outputs_np = np.array(all_outputs)
+#        all_labels_np = np.array(all_labels)
+#        auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
+#        print(f'AUC {auc}')
+        evaluate_model(model, test_dataset)
+        
+    torch.save(model.state_dict(), "convnet1d_model.pth")
+
 train_loader, test_loader = split_dataset(dataset)
 train_loader, test_loader = DataLoader(train_loader, batch_size=32, shuffle=True), DataLoader(test_loader, batch_size=32, shuffle=True)
-train_model(model, train_loader, criterion, optimizer, num_epochs=10)
-evaluate_model(model, test_loader)
+train_model(model, train_loader, test_loader, criterion, optimizer, num_epochs=10)
+#evaluate_model(model, test_loader)
 
