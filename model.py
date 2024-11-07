@@ -5,7 +5,7 @@ import torch.optim as optim
 #from sklearn.metrics import roc_auc_score
 from torch.utils.data import DataLoader, random_split
 from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score, f1_score
-import cell_sampling
+import dataset
 import numpy as np
 
 import torch.nn.functional as F
@@ -56,12 +56,13 @@ if torch.cuda.is_available():
 else:
     print("CUDA GPU is not available.")
 
-mtx_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx"
-colnames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_cols"
-cells_path = "../E-ANND-2/E-ANND-2.cells.txt"
-rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
+#mtx_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx"
+#colnames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_cols"
+#cells_path = "../E-ANND-2/E-ANND-2.cells.txt"
+#rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
 features_path = "Hsapiens_features.txt"
-num_classes, input_length, dataset = cell_sampling.load_data(mtx_path, colnames_path, cells_path, rownames_path, features_path)
+dir = "../learning_set"
+num_classes, input_length, dataset = dataset.load_data(dir, features_path)
 print(num_classes)
 print(input_length)
 #dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
