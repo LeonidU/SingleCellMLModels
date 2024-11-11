@@ -4,26 +4,51 @@ import numpy as np
 from scipy.io import mmread
 import pandas as pd
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset
 from sklearn.preprocessing import LabelEncoder
+from collections import Counter
+
+def filter_underrepresented_samples(dataset, threshold=0.02):
+    # Step 1: Count the occurrences of each label
+    labels = [dataset[i][1].item() for i in range(len(dataset))]
+    num_labels = max(labels)
+    label_counts = Counter(labels)
+
+    # Step 2: Calculate the label frequencies
+    total_samples = len(labels)
+    label_frequencies = {label: count / total_samples for label, count in label_counts.items()}
+
+    # Step 3: Identify labels that meet the frequency threshold
+    valid_labels = {label for label, freq in label_frequencies.items() if freq >= threshold}
+    filtered_labels_count = len(label_counts) - len(valid_labels)
+
+    # Step 4: Filter out samples with labels below the threshold
+    filtered_indices = [i for i in range(len(dataset)) if dataset[i][1].item() in valid_labels]
+
+    # Step 5: Create a new dataset with filtered samples
+    filtered_mtx = dataset.mtx[:, filtered_indices]
+    filtered_col_names = [dataset.col_names[i] for i in filtered_indices]
+    filtered_cells = dataset.cells[dataset.cells['column'].isin(filtered_col_names)]
+
+    return MTXDataset(filtered_mtx, filtered_col_names, filtered_cells), filtered_mtx.shape[0], num_labels
+
+class MTXDataset(Dataset):
+    def __init__(self, mtx, col_names, cells):
+        self.mtx = mtx
+        self.col_names = col_names
+        self.cells = cells
+
+    def __len__(self):
+        return self.mtx.shape[1]
+
+    def __getitem__(self, idx):
+        column_data = self.mtx[:, idx].flatten()
+        column_name = self.col_names[idx]
+        column_type = self.cells[self.cells['column'] == column_name]['type_encoded'].values[0]
+        return torch.tensor(column_data, dtype=torch.float32), torch.tensor(column_type, dtype=torch.long)
 
 # Custom Dataset class
 def load_data(data_dir, features_path):
-    class MTXDataset(Dataset):
-        def __init__(self, mtx, col_names, cells):
-            self.mtx = mtx
-            self.col_names = col_names
-            self.cells = cells
-
-        def __len__(self):
-            return self.mtx.shape[1]
-
-        def __getitem__(self, idx):
-            column_data = self.mtx[:, idx].flatten()
-            column_name = self.col_names[idx]
-            column_type = self.cells[self.cells['column'] == column_name]['type_encoded'].values[0]
-            return torch.tensor(column_data, dtype=torch.float32), torch.tensor(column_type, dtype=torch.long)
-
     all_mtx = []
     all_col_names = []
     all_cells = []
@@ -102,9 +127,11 @@ def load_data(data_dir, features_path):
 
     # Encode cell types
     combined_cells['type_encoded'] = label_encoder.fit_transform(combined_cell_types)
-    input_features = len(set(combined_cells["type_encoded"]))
     dataset = MTXDataset(torch.tensor(combined_mtx, dtype=torch.float32), all_col_names, combined_cells)
-    return input_features, combined_mtx.shape[0], dataset
+    dataset, input_features, input_classes = filter_underrepresented_samples(dataset)
+    print("input features", input_features)
+    print("input_classes", input_classes)
+    return input_features, input_classes, dataset
 
 #if __name__ == "__main__":
 #    data_dir = "learning_set"

@@ -11,7 +11,7 @@ import numpy as np
 import torch.nn.functional as F
 # Define the 1D CNN model
 class CNN1DClassifier(nn.Module):
-    def __init__(self, input_length, num_classes):
+    def __init__(self, input_length, input_classes):
         super(CNN1DClassifier, self).__init__()
         self.conv1 = nn.Conv1d(in_channels=1, out_channels=16, kernel_size=3, padding=1)
         self.conv2 = nn.Conv1d(in_channels=16, out_channels=32, kernel_size=3, padding=1)
@@ -23,7 +23,7 @@ class CNN1DClassifier(nn.Module):
         # Calculate the output length after convolutions and pooling
         conv_output_length = input_length
         self.fc1 = nn.Linear(64 * conv_output_length, 128)
-        self.fc2 = nn.Linear(128, num_classes)
+        self.fc2 = nn.Linear(128, input_classes)
 #        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
@@ -62,20 +62,22 @@ else:
 #rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
 features_path = "Hsapiens_features.txt"
 dir = "../learning_set"
-num_classes, input_length, dataset = dataset.load_data(dir, features_path)
-print(num_classes)
+input_length, input_classes, dataset = dataset.load_data(dir, features_path)
+# input_features, input_classes, dataset
+
+print(input_classes)
 print(input_length)
 #dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
-model = CNN1DClassifier(input_length=input_length,  num_classes=num_classes)
+model = CNN1DClassifier(input_length=input_length,  input_classes=input_classes)
 model = model.to(device)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-def evaluate_model(model, test_loader):
+def evaluate_model(model, test_loader, size):
     model.eval()
     all_labels = []
     all_outputs = []
@@ -92,13 +94,25 @@ def evaluate_model(model, test_loader):
     all_outputs_np = np.array(all_outputs)
     all_labels_np = np.array(all_labels)
     predicted_labels = np.argmax(all_outputs_np, axis=1)
+    np.savetxt("all_outputs_np.csv", all_outputs_np, delimiter=",")
+    np.savetxt("all_labels_np.csv", all_labels_np, delimiter=",")
+    np.savetxt("predicted_labels.csv", predicted_labels, delimiter=",")
 
     # Calculate metrics
-    auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
-    accuracy = accuracy_score(all_labels_np, predicted_labels)
-    precision = precision_score(all_labels_np, predicted_labels, average='weighted')
-    recall = recall_score(all_labels_np, predicted_labels, average='weighted')
-    f1 = f1_score(all_labels_np, predicted_labels, average='weighted')
+    unique_classes = np.unique(all_labels_np)
+    if len(unique_classes) < all_outputs_np.shape[1]:
+        # Pad the output with zeros for missing classes
+        padded_outputs = np.zeros((all_outputs_np.shape[0], len(unique_classes)))
+        for i, cls in enumerate(unique_classes):
+            padded_outputs[:, i] = all_outputs_np[:, cls]
+        all_outputs_np = padded_outputs
+#    auc = roc_auc_score(all_labels_np, all_outputs_np[:, unique_classes], multi_class='ovr', labels=unique_classes)
+#    auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
+    auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr', labels=unique_classes)
+#    accuracy = accuracy_score(all_labels_np, predicted_labels)
+#    precision = precision_score(all_labels_np, predicted_labels, average='weighted')
+#    recall = recall_score(all_labels_np, predicted_labels, average='weighted')
+#    f1 = f1_score(all_labels_np, predicted_labels, average='weighted')
 
     print(f"Test AUC: {auc:.4f}")
     print(f"Test Accuracy: {accuracy:.4f}")
@@ -108,7 +122,7 @@ def evaluate_model(model, test_loader):
 
 
 # Training loop
-def train_model(model, dataloader, test_dataset, criterion, optimizer, num_epochs=20):
+def train_model(model, dataloader, test_dataset, criterion, optimizer, input_classes, num_epochs=20):
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
@@ -118,7 +132,7 @@ def train_model(model, dataloader, test_dataset, criterion, optimizer, num_epoch
             # Move data to the device (GPU or CPU)
 #            inputs, labels = inputs.float(), labels
 #            inputs, labels = inputs.permute(0, 2, 1).float().to(device), labels.long().to(device)
-            inputs, labels = inputs.float().to(device), labels.long().to(device)
+            inputs, labels = inputs.float().to(device), labels.to(device)
             # Zero the gradient
             optimizer.zero_grad()
 
@@ -140,12 +154,12 @@ def train_model(model, dataloader, test_dataset, criterion, optimizer, num_epoch
 #        all_labels_np = np.array(all_labels)
 #        auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
 #        print(f'AUC {auc}')
-        evaluate_model(model, test_dataset)
+        evaluate_model(model, test_dataset, input_classes)
         
     torch.save(model.state_dict(), "convnet1d_model.pth")
 
 train_loader, test_loader = split_dataset(dataset)
 train_loader, test_loader = DataLoader(train_loader, batch_size=32, shuffle=True), DataLoader(test_loader, batch_size=32, shuffle=True)
-train_model(model, train_loader, test_loader, criterion, optimizer, num_epochs=10)
+train_model(model, train_loader, test_loader, criterion, optimizer, input_classes, num_epochs=10)
 #evaluate_model(model, test_loader)
 
