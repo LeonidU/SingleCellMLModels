@@ -8,29 +8,34 @@ from torch.utils.data import Dataset, DataLoader, Subset
 from sklearn.preprocessing import LabelEncoder
 from collections import Counter
 
-def filter_underrepresented_samples(dataset, threshold=0.02):
-    # Step 1: Count the occurrences of each label
-    labels = [dataset[i][1].item() for i in range(len(dataset))]
-    num_labels = max(labels)
-    label_counts = Counter(labels)
+def filter_columns_by_type(combined_mtx, all_cells):
+    # Validate that number of rows in dataframe equals number of columns in matrix
+    if combined_mtx.shape[1] != all_cells.shape[0]:
+        raise ValueError("Number of rows in all_cells must be equal to the number of columns in combined_mtx")
 
-    # Step 2: Calculate the label frequencies
-    total_samples = len(labels)
-    label_frequencies = {label: count / total_samples for label, count in label_counts.items()}
+    # Drop rows with NaN in 'type' column
+    filtered_cells = all_cells.dropna(subset=['type']).reset_index(drop=True)
 
-    # Step 3: Identify labels that meet the frequency threshold
-    valid_labels = {label for label, freq in label_frequencies.items() if freq >= threshold}
-    filtered_labels_count = len(label_counts) - len(valid_labels)
+    # Calculate type counts
+    type_counts = filtered_cells['type'].value_counts(normalize=True)
 
-    # Step 4: Filter out samples with labels below the threshold
-    filtered_indices = [i for i in range(len(dataset)) if dataset[i][1].item() in valid_labels]
+    # Find types that represent at least 5% of all columns
+    valid_types = type_counts[type_counts >= 0.02].index.tolist()
 
-    # Step 5: Create a new dataset with filtered samples
-    filtered_mtx = dataset.mtx[:, filtered_indices]
-    filtered_col_names = [dataset.col_names[i] for i in filtered_indices]
-    filtered_cells = dataset.cells[dataset.cells['column'].isin(filtered_col_names)]
+    # Filter out columns with types that make up less than 5% or NaN
+    filtered_cells = filtered_cells[filtered_cells['type'].isin(valid_types)].reset_index(drop=True)
 
-    return MTXDataset(filtered_mtx, filtered_col_names, filtered_cells), filtered_mtx.shape[0], num_labels
+    # Get filtered columns indexes
+    filtered_indices = filtered_cells.index.tolist()
+
+    # Use the filtered indices to select columns from the numpy matrix
+    filtered_mtx = combined_mtx[:, filtered_indices]
+    
+    # Ensure filtered_mtx and filtered_cells have the same number of columns
+    filtered_cells = filtered_cells.iloc[:filtered_mtx.shape[1]].reset_index(drop=True)
+    
+    return filtered_mtx, filtered_cells
+
 
 class MTXDataset(Dataset):
     def __init__(self, mtx, col_names, cells):
@@ -44,6 +49,8 @@ class MTXDataset(Dataset):
     def __getitem__(self, idx):
         column_data = self.mtx[:, idx].flatten()
         column_name = self.col_names[idx]
+#        print("column_name", column_name)
+#        print(self.cells[self.cells['column'] == column_name]['type_encoded'])
         column_type = self.cells[self.cells['column'] == column_name]['type_encoded'].values[0]
         return torch.tensor(column_data, dtype=torch.float32), torch.tensor(column_type, dtype=torch.long)
 
@@ -124,11 +131,15 @@ def load_data(data_dir, features_path):
     # Stack all matrices horizontally
     combined_mtx = np.hstack(final_mtx_list)
     combined_cells = pd.concat(all_cells, ignore_index=True)
+    combined_mtx, combined_cells = filter_columns_by_type(combined_mtx, combined_cells)
 
     # Encode cell types
-    combined_cells['type_encoded'] = label_encoder.fit_transform(combined_cell_types)
-    dataset = MTXDataset(torch.tensor(combined_mtx, dtype=torch.float32), all_col_names, combined_cells)
-    dataset, input_features, input_classes = filter_underrepresented_samples(dataset)
+    combined_cells['type_encoded'] = label_encoder.fit_transform(combined_cells['type'])
+    input_classes = len(set(combined_cells['type_encoded']))
+    print(combined_cells)
+#    print(all_col_names)
+    input_features = combined_mtx.shape[0]
+    dataset = MTXDataset(torch.tensor(combined_mtx, dtype=torch.float32), combined_cells['column'], combined_cells)
     print("input features", input_features)
     print("input_classes", input_classes)
     return input_features, input_classes, dataset

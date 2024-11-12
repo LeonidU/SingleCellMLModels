@@ -83,10 +83,13 @@ def evaluate_model(model, test_loader, size):
     all_outputs = []
     with torch.no_grad():
         for vectors, labels in test_loader:
+            print(vectors)
             vectors, labels = vectors.to(device), labels.to(device)
 
             # Forward pass
             outputs = model(vectors)
+            print(outputs)
+            print(labels)
             all_labels.extend(labels.cpu().numpy())
             all_outputs.extend(F.softmax(outputs, dim=1).cpu().numpy())
 
@@ -99,20 +102,20 @@ def evaluate_model(model, test_loader, size):
     np.savetxt("predicted_labels.csv", predicted_labels, delimiter=",")
 
     # Calculate metrics
-    unique_classes = np.unique(all_labels_np)
-    if len(unique_classes) < all_outputs_np.shape[1]:
-        # Pad the output with zeros for missing classes
-        padded_outputs = np.zeros((all_outputs_np.shape[0], len(unique_classes)))
-        for i, cls in enumerate(unique_classes):
-            padded_outputs[:, i] = all_outputs_np[:, cls]
-        all_outputs_np = padded_outputs
+#    unique_classes = np.unique(all_labels_np)
+#    if len(unique_classes) < all_outputs_np.shape[1]:
+#        # Pad the output with zeros for missing classes
+#        padded_outputs = np.zeros((all_outputs_np.shape[0], len(unique_classes)))
+#        for i, cls in enumerate(unique_classes):
+#            padded_outputs[:, i] = all_outputs_np[:, cls]
+#        all_outputs_np = padded_outputs
 #    auc = roc_auc_score(all_labels_np, all_outputs_np[:, unique_classes], multi_class='ovr', labels=unique_classes)
-#    auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
-    auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr', labels=unique_classes)
-#    accuracy = accuracy_score(all_labels_np, predicted_labels)
-#    precision = precision_score(all_labels_np, predicted_labels, average='weighted')
-#    recall = recall_score(all_labels_np, predicted_labels, average='weighted')
-#    f1 = f1_score(all_labels_np, predicted_labels, average='weighted')
+    auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
+#    auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr', labels=unique_classes)
+    accuracy = accuracy_score(all_labels_np, predicted_labels)
+    precision = precision_score(all_labels_np, predicted_labels, average='weighted')
+    recall = recall_score(all_labels_np, predicted_labels, average='weighted')
+    f1 = f1_score(all_labels_np, predicted_labels, average='weighted')
 
     print(f"Test AUC: {auc:.4f}")
     print(f"Test Accuracy: {accuracy:.4f}")
