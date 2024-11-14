@@ -20,10 +20,11 @@ def filter_columns_by_type(combined_mtx, all_cells):
 
     # Calculate type counts
     type_counts = filtered_cells['type'].value_counts(normalize=True)
-
+    print(type_counts)
     # Find types that represent at least 5% of all columns
     valid_types = type_counts[type_counts >= 0.01].index.tolist()
-
+    print("valid count")
+    print(valid_types)
     # Filter out columns with types that make up less than 5% or NaN
     filtered_cells = filtered_cells[filtered_cells['type'].isin(valid_types)].reset_index(drop=True)
 
@@ -44,6 +45,11 @@ class MTXDataset(Dataset):
         self.mtx = mtx
         self.col_names = col_names
         self.cells = cells
+
+    def normalize(self):
+        mean = self.mtx.mean()
+        std = self.mtx.std() + 1e-6
+        self.mtx = (self.mtx - mean) / std
 
     def __len__(self):
         return self.mtx.shape[1]
@@ -143,6 +149,7 @@ def load_data(data_dir, features_path):
 #    print(all_col_names)
     input_features = combined_mtx.shape[0]
     dataset = MTXDataset(torch.tensor(combined_mtx, dtype=torch.float32), combined_cells['column'], combined_cells)
+    dataset.normalize()
     print("input features", input_features)
     print("input_classes", input_classes)
     return input_features, input_classes, dataset

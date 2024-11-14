@@ -80,6 +80,11 @@ def split_dataset(dataset, train_ratio=0.8):
     test_size = len(dataset) - train_size
     return random_split(dataset, [train_size, test_size])
 
+def weights_init(m):
+    if isinstance(m, nn.Conv1d) or isinstance(m, nn.Linear):
+        nn.init.xavier_uniform_(m.weight)
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
 
 
 # Initialize the model, loss function, and optimizer
@@ -104,6 +109,8 @@ print(input_length)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 model = CNN1DClassifier(input_length=input_length,  input_classes=input_classes)
+model.apply(weights_init)
+
 model = model.to(device)
 
 criterion = nn.CrossEntropyLoss()
@@ -157,39 +164,45 @@ def evaluate_model(model, test_loader, size):
 
 
 # Training loop
-def train_model(model, dataloader, test_dataset, criterion, optimizer, input_classes, num_epochs=20):
+def train_model(model, train_loader, test_loader, criterion, optimizer, input_classes, num_epochs=20):
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
         all_labels = []
         all_outputs = []
-        for inputs, labels in dataloader:
+        for inputs, labels in train_loader:
             # Move data to the device (GPU or CPU)
 #            inputs, labels = inputs.float(), labels
 #            inputs, labels = inputs.permute(0, 2, 1).float().to(device), labels.long().to(device)
             inputs, labels = inputs.float().to(device), labels.to(device)
             # Zero the gradient
             optimizer.zero_grad()
-
+#            print(labels.shape)
             # Forward pass
             outputs = model(inputs)
+#            print(outputs.shape)
             loss = criterion(outputs, labels)
 
             # Backward pass and optimization
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             all_labels.extend(labels.cpu().numpy())
 #            all_outputs.extend(outputs.cpu().detach().numpy())
             all_outputs.extend(F.softmax(outputs, dim=1).cpu().detach().numpy())
+            print(F.softmax(outputs, dim=1).cpu().detach().numpy())
+            print(inputs)
+#            auc = roc_auc_score(all_labels, all_outputs, multi_class='ovr')
+#            print(f"AUC is {auc:.4f}")
             running_loss += loss.item()
 
-        epoch_loss = running_loss / len(dataloader.dataset)
+        epoch_loss = running_loss / len(train_loader.dataset)
         print(f'Epoch {epoch+1}, Loss: {epoch_loss:.4f}')
 #        all_outputs_np = np.array(all_outputs)
 #        all_labels_np = np.array(all_labels)
 #        auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
 #        print(f'AUC {auc}')
-        evaluate_model(model, test_dataset, input_classes)
+        evaluate_model(model, test_loader, input_classes)
         
     torch.save(model.state_dict(), "convnet1d_model.pth")
 
