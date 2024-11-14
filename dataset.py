@@ -10,6 +10,8 @@ from collections import Counter
 
 def filter_columns_by_type(combined_mtx, all_cells):
     # Validate that number of rows in dataframe equals number of columns in matrix
+    print(all_cells.shape)
+    print( combined_mtx.shape[1])
     if combined_mtx.shape[1] != all_cells.shape[0]:
         raise ValueError("Number of rows in all_cells must be equal to the number of columns in combined_mtx")
 
@@ -20,7 +22,7 @@ def filter_columns_by_type(combined_mtx, all_cells):
     type_counts = filtered_cells['type'].value_counts(normalize=True)
 
     # Find types that represent at least 5% of all columns
-    valid_types = type_counts[type_counts >= 0.02].index.tolist()
+    valid_types = type_counts[type_counts >= 0.01].index.tolist()
 
     # Filter out columns with types that make up less than 5% or NaN
     filtered_cells = filtered_cells[filtered_cells['type'].isin(valid_types)].reset_index(drop=True)
@@ -97,11 +99,12 @@ def load_data(data_dir, features_path):
             # Load column names
             with open(colnames_path, 'r') as f:
                 col_names = [line.strip() for line in f.readlines()]
-
+            print(len(col_names))
             # Load cell type mapping (use only the last column)
             cells = pd.read_csv(cells_path, sep='\t', header=0)
             cells = cells[['id', 'inferred_cell_type_-_ontology_labels']]
             cells.columns = ['column', 'type']
+            cells = cells[cells['column'].isin(col_names)]
             combined_cell_types.extend(cells['type'].tolist())
 
             # Load row names (use only the first column)

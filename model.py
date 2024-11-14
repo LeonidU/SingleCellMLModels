@@ -10,6 +10,7 @@ import numpy as np
 
 import torch.nn.functional as F
 # Define the 1D CNN model
+"""
 class CNN1DClassifier(nn.Module):
     def __init__(self, input_length, input_classes):
         super(CNN1DClassifier, self).__init__()
@@ -41,7 +42,38 @@ class CNN1DClassifier(nn.Module):
 #        x = self.softmax(x)
 #        print("Iteration over")
         return x
+"""
 
+class CNN1DClassifier(nn.Module):
+    def __init__(self, input_length, input_classes):
+        super(CNN1DClassifier, self).__init__()
+        self.conv1 = nn.Conv1d(in_channels=1, out_channels=16, kernel_size=5, padding=2)
+        self.bn1 = nn.BatchNorm1d(16)
+        self.conv2 = nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, padding=2)
+        self.bn2 = nn.BatchNorm1d(32)
+        self.conv3 = nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, padding=2)
+        self.bn3 = nn.BatchNorm1d(64)
+        self.relu = nn.ReLU()
+        self.maxpool = nn.MaxPool1d(kernel_size=2, stride=2)
+        self.flatten = nn.Flatten()
+        self.drop1 = nn.Dropout(0.3)
+        conv_output_length = input_length // 8  # Assuming 3 maxpools with stride 2
+        self.fc1 = nn.Linear(64 * conv_output_length, 128)
+        self.fc2 = nn.Linear(128, input_classes)
+
+    def forward(self, x):
+        x = x.unsqueeze(1)  # Add channel dimension
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.maxpool(x)
+        x = self.drop1(x)
+        x = self.relu(self.bn2(self.conv2(x)))
+        x = self.maxpool(x)
+        x = self.relu(self.bn3(self.conv3(x)))
+        x = self.maxpool(x)
+        x = self.flatten(x)
+        x = self.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
 
 def split_dataset(dataset, train_ratio=0.8):
     train_size = int(train_ratio * len(dataset))
@@ -61,7 +93,7 @@ else:
 #cells_path = "../E-ANND-2/E-ANND-2.cells.txt"
 #rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
 features_path = "Hsapiens_features.txt"
-dir = "../learning_set"
+dir = "../learning_set/123"
 input_length, input_classes, dataset = dataset.load_data(dir, features_path)
 # input_features, input_classes, dataset
 
@@ -83,13 +115,13 @@ def evaluate_model(model, test_loader, size):
     all_outputs = []
     with torch.no_grad():
         for vectors, labels in test_loader:
-            print(vectors)
+#            print(vectors)
             vectors, labels = vectors.to(device), labels.to(device)
 
             # Forward pass
             outputs = model(vectors)
-            print(outputs)
-            print(labels)
+#            print(outputs)
+#            print(labels)
             all_labels.extend(labels.cpu().numpy())
             all_outputs.extend(F.softmax(outputs, dim=1).cpu().numpy())
 
