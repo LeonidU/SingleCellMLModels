@@ -47,9 +47,9 @@ class MTXDataset(Dataset):
         self.cells = cells
 
     def normalize(self):
-        mean = self.mtx.mean()
-        std = self.mtx.std() + 1e-6
-        self.mtx = (self.mtx - mean) / std
+#        mean = self.mtx.mean()
+#        std = self.mtx.std() + 1e-6
+        self.mtx = np.log(self.mtx+1)
 
     def __len__(self):
         return self.mtx.shape[1]

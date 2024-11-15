@@ -10,69 +10,53 @@ import numpy as np
 
 import torch.nn.functional as F
 # Define the 1D CNN model
-"""
-class CNN1DClassifier(nn.Module):
-    def __init__(self, input_length, input_classes):
-        super(CNN1DClassifier, self).__init__()
-        self.conv1 = nn.Conv1d(in_channels=1, out_channels=16, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv1d(in_channels=16, out_channels=32, kernel_size=3, padding=1)
-        self.conv3 = nn.Conv1d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.maxpool = nn.MaxPool1d(kernel_size=1, stride=1)
-        self.flatten = nn.Flatten()
-        self.drop1 = nn.Dropout(0.5)
-        # Calculate the output length after convolutions and pooling
-        conv_output_length = input_length
-        self.fc1 = nn.Linear(64 * conv_output_length, 128)
-        self.fc2 = nn.Linear(128, input_classes)
-#        self.softmax = nn.Softmax(dim=1)
 
-    def forward(self, x):
-        x = x.unsqueeze(1)  # Add channel dimension
-        x = self.relu(self.conv1(x))
-        x = self.maxpool(x)
-        x = self.drop1(x)
-        x = self.relu(self.conv2(x))
-        x = self.maxpool(x)
-        x = self.relu(self.conv3(x))
-        x = self.maxpool(x)
-        x = self.flatten(x)
-        x = self.relu(self.fc1(x))
-        x = self.fc2(x)
-#        x = self.softmax(x)
-#        print("Iteration over")
-        return x
-"""
-
-class CNN1DClassifier(nn.Module):
-    def __init__(self, input_length, input_classes):
-        super(CNN1DClassifier, self).__init__()
-        self.conv1 = nn.Conv1d(in_channels=1, out_channels=16, kernel_size=5, padding=2)
+class SingleCellCNNClassifier(nn.Module):
+    def __init__(self, input_features, num_classes):
+        super(SingleCellCNNClassifier, self).__init__()
+        # Define the layers
+        # Assuming the input is reshaped to (batch_size, 1, input_features) for convolutional purposes
+        self.conv1 = nn.Conv1d(in_channels=1, out_channels=16, kernel_size=5, stride=1, padding=2)
         self.bn1 = nn.BatchNorm1d(16)
-        self.conv2 = nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, padding=2)
+        self.conv2 = nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=1, padding=2)
         self.bn2 = nn.BatchNorm1d(32)
-        self.conv3 = nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, padding=2)
+        self.conv3 = nn.Conv1d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1)
         self.bn3 = nn.BatchNorm1d(64)
-        self.relu = nn.ReLU()
-        self.maxpool = nn.MaxPool1d(kernel_size=2, stride=2)
-        self.flatten = nn.Flatten()
-        self.drop1 = nn.Dropout(0.3)
-        conv_output_length = input_length // 8  # Assuming 3 maxpools with stride 2
-        self.fc1 = nn.Linear(64 * conv_output_length, 128)
-        self.fc2 = nn.Linear(128, input_classes)
+        self.conv4 = nn.Conv1d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1)
+        self.bn4 = nn.BatchNorm1d(128)
+        self.conv5 = nn.Conv1d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1)
+        self.bn5 = nn.BatchNorm1d(256)
+        
+        # Fully connected layers for classification
+        self.fc1 = nn.Linear(256 * (input_features // 32), 512)  # Adjusting size after pooling
+        self.fc2 = nn.Linear(512, 128)
+        self.fc3 = nn.Linear(128, num_classes)  # num_classes classes
+        
+        # Pooling layer
+        self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
+        
+        # Dropout for regularization
+        self.dropout = nn.Dropout(0.3)
 
     def forward(self, x):
-        x = x.unsqueeze(1)  # Add channel dimension
-        x = self.relu(self.bn1(self.conv1(x)))
-        x = self.maxpool(x)
-        x = self.drop1(x)
-        x = self.relu(self.bn2(self.conv2(x)))
-        x = self.maxpool(x)
-        x = self.relu(self.bn3(self.conv3(x)))
-        x = self.maxpool(x)
-        x = self.flatten(x)
-        x = self.relu(self.fc1(x))
-        x = self.fc2(x)
+        # Convolutional layers with activation, batch normalization, and pooling
+        x = x.unsqueeze(1)  # Add channel dimension if necessary
+        x = self.pool(F.relu(self.bn1(self.conv1(x))))
+        x = self.pool(F.relu(self.bn2(self.conv2(x))))
+        x = self.pool(F.relu(self.bn3(self.conv3(x))))
+        x = self.pool(F.relu(self.bn4(self.conv4(x))))
+        x = self.pool(F.relu(self.bn5(self.conv5(x))))
+        
+        # Flatten the tensor
+        x = x.view(x.size(0), -1)
+        
+        # Fully connected layers with dropout
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = F.relu(self.fc2(x))
+        x = self.dropout(x)
+        x = self.fc3(x)
+        
         return x
 
 def split_dataset(dataset, train_ratio=0.8):
@@ -108,7 +92,7 @@ print(input_length)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
-model = CNN1DClassifier(input_length=input_length,  input_classes=input_classes)
+model = SingleCellCNNClassifier(input_features=input_length,  num_classes=input_classes)
 model.apply(weights_init)
 
 model = model.to(device)
@@ -210,4 +194,3 @@ train_loader, test_loader = split_dataset(dataset)
 train_loader, test_loader = DataLoader(train_loader, batch_size=32, shuffle=True), DataLoader(test_loader, batch_size=32, shuffle=True)
 train_model(model, train_loader, test_loader, criterion, optimizer, input_classes, num_epochs=10)
 #evaluate_model(model, test_loader)
-
