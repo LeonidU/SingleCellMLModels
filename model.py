@@ -10,18 +10,20 @@ import numpy as np
 
 import torch.nn.functional as F
 # Define the 1D CNN model
+
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1):
         super(ResidualBlock, self).__init__()
-        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1)
+        super(ResidualBlock, self).__init__()
+        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size=5, stride=stride, padding=2)
         self.bn1 = nn.BatchNorm1d(out_channels)
-        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=5, stride=1, padding=2)
         self.bn2 = nn.BatchNorm1d(out_channels)
 
         self.shortcut = nn.Sequential()
         if stride != 1 or in_channels != out_channels:
             self.shortcut = nn.Sequential(
-                nn.Conv1d(in_channels, out_channels, kernel_size=1, stride=stride),
+                nn.Conv1d(in_channels, out_channels, kernel_size=1, stride=stride, padding=0),
                 nn.BatchNorm1d(out_channels)
             )
 
@@ -35,9 +37,14 @@ class ResidualBlock(nn.Module):
 class SingleCellResNet(nn.Module):
     def __init__(self, input_features, num_classes):
         super(SingleCellResNet, self).__init__()
+        super(SingleCellResNet, self).__init__()
+        # Embedding layer to reduce dimensionality
+        self.embedding_layer = nn.Linear(input_features, 512)
         self.input_layer = nn.Sequential(
             nn.Conv1d(1, 64, kernel_size=7, stride=2, padding=3),
             nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
             nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
         )
@@ -58,6 +65,7 @@ class SingleCellResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
+        x = self.embedding_layer(x)  # Map to lower-dimensional space
         x = x.unsqueeze(1)  # Add channel dimension if necessary
         x = self.input_layer(x)
         x = self.layer1(x)
@@ -92,7 +100,7 @@ else:
 #cells_path = "../E-ANND-2/E-ANND-2.cells.txt"
 #rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
 features_path = "Hsapiens_features.txt"
-dir = "../learning_set/123"
+dir = "../learning_set/"
 input_length, input_classes, dataset = dataset.load_data(dir, features_path)
 # input_features, input_classes, dataset
 
