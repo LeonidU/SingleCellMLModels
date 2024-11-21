@@ -48,17 +48,18 @@ get_genes_homology <- function(specie, non_human) {
   return(gene_mapping)
 }
 
+table <- NULL
 species <- c("drerio", "ggallus", "mmusculus", "rnorvegicus", "sscrofa")
 for (specie in species) {
   non_human <- extract_gene_ids(paste0(specie, ".gtf"))
-  table <- get_genes_homology(specie, non_human)
-  if (is.null(new_table)) {
-    new_table <- table
+  new_table <- get_genes_homology(specie, non_human)
+  if (is.null(table)) {
+    table <- new_table
     } else {
-    new_table <- merge(new_table, table, by="hsapiens_homolog_ensembl_gene")
+    table <- merge(new_table, table, by="hsapiens_homolog_ensembl_gene")
   }
 }
-write.table(x=new_table, file="Hsapiens_features.txt")
+write.table(x=table, file="Hsapiens_features.txt")
 
 # Set datasets for pig and human
 
