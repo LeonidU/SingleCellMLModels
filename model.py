@@ -14,7 +14,6 @@ import torch.nn.functional as F
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1):
         super(ResidualBlock, self).__init__()
-        super(ResidualBlock, self).__init__()
         self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size=5, stride=stride, padding=2)
         self.bn1 = nn.BatchNorm1d(out_channels)
         self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=5, stride=1, padding=2)
@@ -37,6 +36,83 @@ class ResidualBlock(nn.Module):
 class SingleCellResNet(nn.Module):
     def __init__(self, input_features, num_classes):
         super(SingleCellResNet, self).__init__()
+        # Attention layer to weigh input features
+        self.attention_layer = nn.Sequential(
+            nn.Linear(input_features, 256),
+            nn.Tanh(),
+            nn.Linear(256, input_features),
+            nn.Softmax(dim=1)
+        )
+#        super(SingleCellResNet, self).__init__()
+        # Embedding layer to reduce dimensionality
+        self.embedding_layer = nn.Linear(input_features, 512)
+        self.input_layer = nn.Sequential(
+            nn.Conv1d(1, 64, kernel_size=7, stride=2, padding=3),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
+        )
+
+        self.layer1 = self._make_layer(64, 64, num_blocks=2, stride=1)
+        self.layer2 = self._make_layer(64, 128, num_blocks=2, stride=2)
+        self.layer3 = self._make_layer(128, 256, num_blocks=2, stride=2)
+        self.layer4 = self._make_layer(256, 512, num_blocks=2, stride=2)
+
+        self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
+        self.fc = nn.Linear(512, num_classes)
+
+    def _make_layer(self, in_channels, out_channels, num_blocks, stride):
+        layers = []
+        layers.append(ResidualBlock(in_channels, out_channels, stride))
+        for _ in range(1, num_blocks):
+            layers.append(ResidualBlock(out_channels, out_channels))
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        attention_weights = self.attention_layer(x)  # Compute attention weights
+        x = x * attention_weights  # Apply attention weights
+        x = x.float()
+        x = self.embedding_layer(x)  # Map to lower-dimensional space
+        x = x.unsqueeze(1)  # Add channel dimension if necessary
+        x = self.input_layer(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.global_avg_pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        return x
+
+
+"""
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super(ResidualBlock, self).__init__()
+        super(ResidualBlock, self).__init__()
+        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size=5, stride=stride, padding=2)
+        self.bn1 = nn.BatchNorm1d(out_channels)
+        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=5, stride=1, padding=2)
+        self.bn2 = nn.BatchNorm1d(out_channels)
+
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv1d(in_channels, out_channels, kernel_size=1, stride=stride, padding=0),
+                nn.BatchNorm1d(out_channels)
+            )
+
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out += self.shortcut(x)
+        out = F.relu(out)
+        return out
+
+class SingleCellResNet(nn.Module):
+    def __init__(self, input_features, num_classes):
         super(SingleCellResNet, self).__init__()
         # Embedding layer to reduce dimensionality
         self.embedding_layer = nn.Linear(input_features, 512)
@@ -76,6 +152,7 @@ class SingleCellResNet(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.fc(x)
         return x
+"""
 
 def split_dataset(dataset, train_ratio=0.8):
     train_size = int(train_ratio * len(dataset))
@@ -100,7 +177,7 @@ else:
 #cells_path = "../E-ANND-2/E-ANND-2.cells.txt"
 #rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
 features_path = "Hsapiens_features.txt"
-dir = "../learning_set/"
+dir = "../test_ls/"
 input_length, input_classes, dataset = dataset.load_data(dir, features_path)
 # input_features, input_classes, dataset
 
