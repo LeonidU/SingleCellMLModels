@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, random_split
 from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score, f1_score
 import dataset
 import numpy as np
-
+from torcheval.metrics import MulticlassAUROC
 import torch.nn.functional as F
 # Define the 1D CNN model
 
@@ -37,15 +37,15 @@ class SingleCellResNet(nn.Module):
     def __init__(self, input_features, num_classes):
         super(SingleCellResNet, self).__init__()
         # Attention layer to weigh input features
-        self.attention_layer = nn.Sequential(
-            nn.Linear(input_features, 256),
-            nn.Tanh(),
-            nn.Linear(256, input_features),
-            nn.Softmax(dim=1)
-        )
+#        self.attention_layer = nn.Sequential(
+#            nn.Linear(input_features, 256),
+#            nn.Tanh(),
+#            nn.Linear(256, input_features),
+#            nn.Softmax(dim=1)
+#        )
 #        super(SingleCellResNet, self).__init__()
         # Embedding layer to reduce dimensionality
-        self.embedding_layer = nn.Linear(input_features, 512)
+        self.embedding_layer = nn.Linear(input_features, 512, bias=True)
         self.input_layer = nn.Sequential(
             nn.Conv1d(1, 64, kernel_size=7, stride=2, padding=3),
             nn.BatchNorm1d(64),
@@ -71,9 +71,9 @@ class SingleCellResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        attention_weights = self.attention_layer(x)  # Compute attention weights
-        x = x * attention_weights  # Apply attention weights
-        x = x.float()
+#        attention_weights = self.attention_layer(x)  # Compute attention weights
+#        x = x * attention_weights  # Apply attention weights
+#        x = x.float()
         x = self.embedding_layer(x)  # Map to lower-dimensional space
         x = x.unsqueeze(1)  # Add channel dimension if necessary
         x = self.input_layer(x)
@@ -165,6 +165,15 @@ def weights_init(m):
         if m.bias is not None:
             nn.init.constant_(m.bias, 0)
 
+class AUCLoss(nn.Module):
+    def __init__(self, num_classes):
+        super(AUCLoss, self).__init__()
+        self.auroc = MulticlassAUROC(num_classes=num_classes, average='macro')
+
+    def forward(self, y_pred, y_true):
+        y_pred = F.softmax(y_pred, dim=1)
+        auc = self.auroc.update(y_pred, y_true)
+        return 1 - auc.compute()
 
 # Initialize the model, loss function, and optimizer
 if torch.cuda.is_available():
@@ -177,7 +186,8 @@ else:
 #cells_path = "../E-ANND-2/E-ANND-2.cells.txt"
 #rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
 features_path = "Hsapiens_features.txt"
-dir = "../test_ls/"
+dir = "../learning_set/lung/"
+#"../test_ls/"
 input_length, input_classes, dataset = dataset.load_data(dir, features_path)
 # input_features, input_classes, dataset
 
@@ -193,6 +203,8 @@ model.apply(weights_init)
 model = model.to(device)
 
 criterion = nn.CrossEntropyLoss()
+
+#criterion = AUCLoss(input_classes)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 def evaluate_model(model, test_loader, size):
