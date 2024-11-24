@@ -36,16 +36,8 @@ class ResidualBlock(nn.Module):
 class SingleCellResNet(nn.Module):
     def __init__(self, input_features, num_classes):
         super(SingleCellResNet, self).__init__()
-        # Attention layer to weigh input features
-#        self.attention_layer = nn.Sequential(
-#            nn.Linear(input_features, 256),
-#            nn.Tanh(),
-#            nn.Linear(256, input_features),
-#            nn.Softmax(dim=1)
-#        )
-#        super(SingleCellResNet, self).__init__()
         # Embedding layer to reduce dimensionality
-        self.embedding_layer = nn.Linear(input_features, 512, bias=True)
+        self.embedding_layer = nn.Linear(input_features, 256, bias=True)
         self.input_layer = nn.Sequential(
             nn.Conv1d(1, 64, kernel_size=7, stride=2, padding=3),
             nn.BatchNorm1d(64),
@@ -59,9 +51,10 @@ class SingleCellResNet(nn.Module):
         self.layer2 = self._make_layer(64, 128, num_blocks=2, stride=2)
         self.layer3 = self._make_layer(128, 256, num_blocks=2, stride=2)
         self.layer4 = self._make_layer(256, 512, num_blocks=2, stride=2)
+        self.layer5 = self._make_layer(512, 1024, num_blocks=2, stride=2)
 
         self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
-        self.fc = nn.Linear(512, num_classes)
+        self.fc = nn.Linear(1024, num_classes)
 
     def _make_layer(self, in_channels, out_channels, num_blocks, stride):
         layers = []
@@ -71,9 +64,6 @@ class SingleCellResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-#        attention_weights = self.attention_layer(x)  # Compute attention weights
-#        x = x * attention_weights  # Apply attention weights
-#        x = x.float()
         x = self.embedding_layer(x)  # Map to lower-dimensional space
         x = x.unsqueeze(1)  # Add channel dimension if necessary
         x = self.input_layer(x)
@@ -81,10 +71,12 @@ class SingleCellResNet(nn.Module):
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
+        x = self.layer5(x)
         x = self.global_avg_pool(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
         return x
+
 
 
 """
@@ -173,7 +165,7 @@ class AUCLoss(nn.Module):
     def forward(self, y_pred, y_true):
         y_pred = F.softmax(y_pred, dim=1)
         auc = self.auroc.update(y_pred, y_true)
-        return 1 - auc.compute()
+        return (1 - auc.compute()).requires_grad_()
 
 # Initialize the model, loss function, and optimizer
 if torch.cuda.is_available():
