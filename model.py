@@ -37,7 +37,7 @@ class SingleCellResNet(nn.Module):
     def __init__(self, input_features, num_classes):
         super(SingleCellResNet, self).__init__()
         # Embedding layer to reduce dimensionality
-        self.embedding_layer = nn.Linear(input_features, 256, bias=True)
+        self.embedding_layer = nn.Linear(input_features, 512, bias=True)
         self.input_layer = nn.Sequential(
             nn.Conv1d(1, 64, kernel_size=7, stride=2, padding=3),
             nn.BatchNorm1d(64),
@@ -51,10 +51,10 @@ class SingleCellResNet(nn.Module):
         self.layer2 = self._make_layer(64, 128, num_blocks=2, stride=2)
         self.layer3 = self._make_layer(128, 256, num_blocks=2, stride=2)
         self.layer4 = self._make_layer(256, 512, num_blocks=2, stride=2)
-        self.layer5 = self._make_layer(512, 1024, num_blocks=2, stride=2)
+#        self.layer5 = self._make_layer(512, 1024, num_blocks=2, stride=2)
 
         self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
-        self.fc = nn.Linear(1024, num_classes)
+        self.fc = nn.Linear(512, num_classes)
 
     def _make_layer(self, in_channels, out_channels, num_blocks, stride):
         layers = []
@@ -71,7 +71,7 @@ class SingleCellResNet(nn.Module):
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
-        x = self.layer5(x)
+#        x = self.layer5(x)
         x = self.global_avg_pool(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
@@ -244,49 +244,39 @@ def evaluate_model(model, test_loader, size):
     print(f"Test Precision: {precision:.4f}")
     print(f"Test Recall: {recall:.4f}")
     print(f"Test F1 Score: {f1:.4f}")
+    return(auc, accuracy, precision, recall, f1)
 
 
-# Training loop
-def train_model(model, train_loader, test_loader, criterion, optimizer, input_classes, num_epochs=20):
+def train_model(model, train_loader, test_loader, criterion, optimizer, input_classes, num_epochs=20, patience=5):
     model.train()
+    best_loss = float('inf')
+    epochs_no_improve = 0
     for epoch in range(num_epochs):
         running_loss = 0.0
-        all_labels = []
-        all_outputs = []
         for inputs, labels in train_loader:
-            # Move data to the device (GPU or CPU)
-#            inputs, labels = inputs.float(), labels
-#            inputs, labels = inputs.permute(0, 2, 1).float().to(device), labels.long().to(device)
             inputs, labels = inputs.float().to(device), labels.to(device)
-            # Zero the gradient
             optimizer.zero_grad()
-#            print(labels.shape)
-            # Forward pass
             outputs = model(inputs)
-#            print(outputs.shape)
             loss = criterion(outputs, labels)
-
-            # Backward pass and optimization
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
-            all_labels.extend(labels.cpu().numpy())
-#            all_outputs.extend(outputs.cpu().detach().numpy())
-            all_outputs.extend(F.softmax(outputs, dim=1).cpu().detach().numpy())
-#            print(F.softmax(outputs, dim=1).cpu().detach().numpy())
-#            print(inputs)
-#            auc = roc_auc_score(all_labels, all_outputs, multi_class='ovr')
-#            print(f"AUC is {auc:.4f}")
             running_loss += loss.item()
-
         epoch_loss = running_loss / len(train_loader.dataset)
         print(f'Epoch {epoch+1}, Loss: {epoch_loss:.4f}')
-#        all_outputs_np = np.array(all_outputs)
-#        all_labels_np = np.array(all_labels)
-#        auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
-#        print(f'AUC {auc}')
-        evaluate_model(model, test_loader, input_classes)
-        
+        auc, accuracy, precision, recall, f1 = evaluate_model(model, test_loader, input_classes)
+
+        # Early stopping
+        if 1-accuracy < best_loss:
+            best_loss = 1-accuracy
+            epochs_no_improve = 0
+            torch.save(model.state_dict(), "convnet1d_model_best.pth")
+        else:
+            epochs_no_improve += 1
+            if epochs_no_improve == patience:
+                print("Early stopping triggered.")
+                break
+
     torch.save(model.state_dict(), "convnet1d_model.pth")
 
 train_loader, test_loader = split_dataset(dataset)
