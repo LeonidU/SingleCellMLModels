@@ -39,22 +39,22 @@ class SingleCellResNet(nn.Module):
         # Embedding layer to reduce dimensionality
         self.embedding_layer = nn.Linear(input_features, 512, bias=True)
         self.input_layer = nn.Sequential(
-            nn.Conv1d(1, 64, kernel_size=7, stride=2, padding=3),
-            nn.BatchNorm1d(64),
+            nn.Conv1d(1, 128, kernel_size=7, stride=2, padding=3),
+            nn.BatchNorm1d(128),
             nn.ReLU(),
             nn.MaxPool1d(kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
             nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
         )
 
-        self.layer1 = self._make_layer(64, 64, num_blocks=2, stride=1)
-        self.layer2 = self._make_layer(64, 128, num_blocks=2, stride=2)
-        self.layer3 = self._make_layer(128, 256, num_blocks=2, stride=2)
-        self.layer4 = self._make_layer(256, 512, num_blocks=2, stride=2)
+        self.layer1 = self._make_layer(128, 128, num_blocks=2, stride=1)
+        self.layer2 = self._make_layer(128, 256, num_blocks=2, stride=2)
+        self.layer3 = self._make_layer(256, 512, num_blocks=2, stride=2)
+        self.layer4 = self._make_layer(512, 1024, num_blocks=2, stride=2)
 #        self.layer5 = self._make_layer(512, 1024, num_blocks=2, stride=2)
 
         self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
-        self.fc = nn.Linear(512, num_classes)
+        self.fc = nn.Linear(1024, num_classes)
 
     def _make_layer(self, in_channels, out_channels, num_blocks, stride):
         layers = []
@@ -178,8 +178,8 @@ else:
 #cells_path = "../E-ANND-2/E-ANND-2.cells.txt"
 #rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
 features_path = "Hsapiens_features.txt"
-dir = "../learning_set/lung/"
-#"../test_ls/"
+#dir = "../learning_set/lung/" 
+dir = "../test_ls/"
 input_length, input_classes, dataset = dataset.load_data(dir, features_path)
 # input_features, input_classes, dataset
 
@@ -203,6 +203,7 @@ def evaluate_model(model, test_loader, size):
     model.eval()
     all_labels = []
     all_outputs = []
+    correct,n = 0.0, 0
     with torch.no_grad():
         for vectors, labels in test_loader:
 #            print(vectors)
@@ -214,7 +215,11 @@ def evaluate_model(model, test_loader, size):
 #            print(labels)
             all_labels.extend(labels.cpu().numpy())
             all_outputs.extend(F.softmax(outputs, dim=1).cpu().numpy())
-
+            predicted = np.array(np.argmax(outputs.cpu().numpy(), axis=1))
+#            print(predicted)
+#            print(labels)
+            correct += (predicted == labels.cpu().numpy()).sum().item()
+            n += labels.size(0)
     # Convert outputs to predicted labels
     all_outputs_np = np.array(all_outputs)
     all_labels_np = np.array(all_labels)
@@ -234,7 +239,7 @@ def evaluate_model(model, test_loader, size):
 #    auc = roc_auc_score(all_labels_np, all_outputs_np[:, unique_classes], multi_class='ovr', labels=unique_classes)
     auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
 #    auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr', labels=unique_classes)
-    accuracy = accuracy_score(all_labels_np, predicted_labels)
+    accuracy = correct/n #accuracy_score(all_labels_np, predicted_labels)
     precision = precision_score(all_labels_np, predicted_labels, average='weighted')
     recall = recall_score(all_labels_np, predicted_labels, average='weighted')
     f1 = f1_score(all_labels_np, predicted_labels, average='weighted')
@@ -251,6 +256,7 @@ def train_model(model, train_loader, test_loader, criterion, optimizer, input_cl
     model.train()
     best_loss = float('inf')
     epochs_no_improve = 0
+    patience = 1
     for epoch in range(num_epochs):
         running_loss = 0.0
         for inputs, labels in train_loader:
