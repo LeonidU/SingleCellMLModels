@@ -7,6 +7,23 @@ import torch
 from torch.utils.data import Dataset, DataLoader, Subset
 from sklearn.preprocessing import LabelEncoder
 from collections import Counter
+from sklearn.decomposition import PCA
+N_COMP=150
+
+def perform_pca(matrix, n_components):
+    # Check if n_components is less than the number of genes
+    if n_components > matrix.shape[1]:
+        raise ValueError("Number of components cannot be greater than the number of genes (columns).")
+    # Perform PCA on the gene matrix (columns represent genes)
+#    pca = PCA(n_components=n_components)
+    pca = PCA(n_components=n_components) #, svd_solver='full')
+    pca_result = pca.fit_transform(matrix.T)  # Transpose to perform PCA on genes
+    # Convert the result back to a DataFrame for easier handling
+#    pca_df = pd.DataFrame(pca_result, index=, columns=[f'PC{i+1}' for i in range(n_components)])
+    pca_result = pca_result[~np.isnan(pca_result).any(axis=1)]
+    return pca_result
+
+
 
 def filter_columns_by_type(combined_mtx, all_cells):
     # Validate that number of rows in dataframe equals number of columns in matrix
@@ -22,7 +39,7 @@ def filter_columns_by_type(combined_mtx, all_cells):
     type_counts = filtered_cells['type'].value_counts(normalize=True)
     print(type_counts)
     # Find types that represent at least 5% of all columns
-    valid_types = type_counts[type_counts >= 0.01].index.tolist()
+    valid_types = type_counts[type_counts >= 0.04].index.tolist()
     print("valid count")
     print(valid_types)
     # Filter out columns with types that make up less than 5% or NaN
@@ -36,26 +53,41 @@ def filter_columns_by_type(combined_mtx, all_cells):
     
     # Ensure filtered_mtx and filtered_cells have the same number of columns
     filtered_cells = filtered_cells.iloc[:filtered_mtx.shape[1]].reset_index(drop=True)
-    
+#    gene_sum = np.sum(filtered_mtx, axis=1)
+#    print(gene_sum)
+    # Filter rows where the sum is not equal to zero
+#    filtered_mtx = filtered_mtx[gene_sum >= 10]
+#    filtered_mtx = perform_pca(filtered_mtx, 64)
     return filtered_mtx, filtered_cells
 
 
 class MTXDataset(Dataset):
-    def __init__(self, mtx, col_names, cells):
-        self.mtx = mtx
+    def __init__(self, mtx, col_names, cells, normalize=False):
+        if (not normalize):
+            self.mtx = mtx
+        else:
+            self.mtx = perform_pca(np.log(mtx+1), N_COMP)
+#np.log(mtx+1), N_COMP)
         self.col_names = col_names
         self.cells = cells
 
     def normalize(self):
 #        mean = self.mtx.mean()
 #        std = self.mtx.std() + 1e-6
-        self.mtx = np.log(self.mtx+1)
+        print("Dataset Normalized")
+        self.mtx = perform_pca(np.log(self.mtx+1), N_COMP)
 
     def __len__(self):
         return self.mtx.shape[1]
 
+    def nrow(self):
+        return self.mtx.shape[0]
+
+    def ncol(self):
+        return self.mtx.shape[1]
+
     def __getitem__(self, idx):
-        column_data = self.mtx[:, idx].flatten()
+        column_data = self.mtx[idx].flatten()
         column_name = self.col_names[idx]
 #        print("column_name", column_name)
 #        print(self.cells[self.cells['column'] == column_name]['type_encoded'])
@@ -148,11 +180,14 @@ def load_data(data_dir, features_path):
     print(combined_cells)
 #    print(all_col_names)
     input_features = combined_mtx.shape[0]
-    dataset = MTXDataset(torch.tensor(combined_mtx, dtype=torch.float32), combined_cells['column'], combined_cells)
-    dataset.normalize()
+    print("genes before PCA", input_features)
+    print("cells before PCA", combined_mtx.shape[1])
+    dataset = MTXDataset(torch.tensor(combined_mtx, dtype=torch.float32), combined_cells['column'], combined_cells, normalize=True)
+#    dataset.normalize()
     print("input features", input_features)
     print("input_classes", input_classes)
-    return input_features, input_classes, dataset
+#    return input_features, input_classes, dataset
+    return N_COMP, input_classes, dataset
 
 #if __name__ == "__main__":
 #    data_dir = "learning_set"

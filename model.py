@@ -1,8 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-#from torch.utils.data import DataLoader, random_split
-#from sklearn.metrics import roc_auc_score
 from torch.utils.data import DataLoader, random_split
 from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score, f1_score
 import dataset
@@ -38,6 +36,7 @@ class SingleCellResNet(nn.Module):
         super(SingleCellResNet, self).__init__()
         # Embedding layer to reduce dimensionality
         self.embedding_layer = nn.Linear(input_features, 512, bias=True)
+        self.em_batch_norm =  nn.BatchNorm1d(512)
         self.input_layer = nn.Sequential(
             nn.Conv1d(1, 128, kernel_size=7, stride=2, padding=3),
             nn.BatchNorm1d(128),
@@ -51,7 +50,7 @@ class SingleCellResNet(nn.Module):
         self.layer2 = self._make_layer(128, 256, num_blocks=2, stride=2)
         self.layer3 = self._make_layer(256, 512, num_blocks=2, stride=2)
         self.layer4 = self._make_layer(512, 1024, num_blocks=2, stride=2)
-#        self.layer5 = self._make_layer(512, 1024, num_blocks=2, stride=2)
+#        self.layer5 = self._make_layer(1024, 2048, num_blocks=2, stride=2)
 
         self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
         self.fc = nn.Linear(1024, num_classes)
@@ -65,6 +64,7 @@ class SingleCellResNet(nn.Module):
 
     def forward(self, x):
         x = self.embedding_layer(x)  # Map to lower-dimensional space
+        x = self.em_batch_norm(x)
         x = x.unsqueeze(1)  # Add channel dimension if necessary
         x = self.input_layer(x)
         x = self.layer1(x)
@@ -76,6 +76,39 @@ class SingleCellResNet(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.fc(x)
         return x
+
+
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=1, gamma=2, reduction='mean'):
+        """
+        :param alpha: Вес, отвечающий за важность положительных примеров (может быть использован для борьбы с дисбалансом классов).
+        :param gamma: Параметр фокусировки, уменьшающий вклад легко классифицируемых примеров.
+        :param reduction: Способ агрегации лосса - 'none', 'mean' или 'sum'.
+        """
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        """
+        :param inputs: Логиты, выходящие из сети (размерность [batch_size, num_classes]).
+        :param targets: Истинные метки классов (размерность [batch_size]).
+        """
+        # Применяем softmax к входным данным для получения вероятностей
+        probs = F.softmax(inputs, dim=1)
+        # Берем вероятности для истинного класса
+        probs = probs.gather(1, targets.view(-1, 1)).squeeze(1)
+        # Вычисляем фокальную потерю
+        focal_weight = (1 - probs) ** self.gamma
+        loss = -self.alpha * focal_weight * torch.log(probs)
+        
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        else:
+            return loss
 
 
 
@@ -178,13 +211,16 @@ else:
 #cells_path = "../E-ANND-2/E-ANND-2.cells.txt"
 #rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
 features_path = "Hsapiens_features.txt"
-#dir = "../learning_set/lung/" 
-dir = "../test_ls/"
+dir = "../learning_set/liver/" 
+#dir = "../test_ls/"
 input_length, input_classes, dataset = dataset.load_data(dir, features_path)
+print("Dataset dimensionality")
+print(dataset.nrow())
+print(dataset.ncol())
 # input_features, input_classes, dataset
 
-print(input_classes)
-print(input_length)
+print("input_classes:", input_classes)
+print("input_length:", input_length)
 #dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -194,10 +230,11 @@ model.apply(weights_init)
 
 model = model.to(device)
 
-criterion = nn.CrossEntropyLoss()
+criterion = FocalLoss()
+#= nn.CrossEntropyLoss()
 
 #criterion = AUCLoss(input_classes)
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
 def evaluate_model(model, test_loader, size):
     model.eval()
@@ -214,41 +251,31 @@ def evaluate_model(model, test_loader, size):
 #            print(outputs)
 #            print(labels)
             all_labels.extend(labels.cpu().numpy())
-            all_outputs.extend(F.softmax(outputs, dim=1).cpu().numpy())
+            all_outputs.extend(np.array(np.argmax(outputs.cpu().numpy(), axis=1)))
             predicted = np.array(np.argmax(outputs.cpu().numpy(), axis=1))
-#            print(predicted)
-#            print(labels)
+            print(predicted)
+            print(labels)
             correct += (predicted == labels.cpu().numpy()).sum().item()
             n += labels.size(0)
     # Convert outputs to predicted labels
     all_outputs_np = np.array(all_outputs)
     all_labels_np = np.array(all_labels)
-    predicted_labels = np.argmax(all_outputs_np, axis=1)
-    np.savetxt("all_outputs_np.csv", all_outputs_np, delimiter=",")
-    np.savetxt("all_labels_np.csv", all_labels_np, delimiter=",")
-    np.savetxt("predicted_labels.csv", predicted_labels, delimiter=",")
+#    predicted_labels = np.argmax(all_outputs_np, axis=1)
+#    np.savetxt("all_outputs_np.csv", all_outputs_np, delimiter=",")
+#    np.savetxt("all_labels_np.csv", all_labels_np, delimiter=",")
+#    np.savetxt("predicted_labels.csv", predicted_labels, delimiter=",")
 
     # Calculate metrics
-#    unique_classes = np.unique(all_labels_np)
-#    if len(unique_classes) < all_outputs_np.shape[1]:
-#        # Pad the output with zeros for missing classes
-#        padded_outputs = np.zeros((all_outputs_np.shape[0], len(unique_classes)))
-#        for i, cls in enumerate(unique_classes):
-#            padded_outputs[:, i] = all_outputs_np[:, cls]
-#        all_outputs_np = padded_outputs
-#    auc = roc_auc_score(all_labels_np, all_outputs_np[:, unique_classes], multi_class='ovr', labels=unique_classes)
-    auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
-#    auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr', labels=unique_classes)
-    accuracy = correct/n #accuracy_score(all_labels_np, predicted_labels)
-    precision = precision_score(all_labels_np, predicted_labels, average='weighted')
-    recall = recall_score(all_labels_np, predicted_labels, average='weighted')
-    f1 = f1_score(all_labels_np, predicted_labels, average='weighted')
-
-    print(f"Test AUC: {auc:.4f}")
+    f1 = f1_score(all_labels_np, all_outputs_np, average='weighted')  # You can change 'weighted' to 'micro', 'macro', etc.
+    accuracy = accuracy_score(all_labels_np, all_outputs_np)
+    recall = recall_score(all_labels_np, all_outputs_np, average='weighted')
+    precision = precision_score(all_labels_np, all_outputs_np, average='weighted')
+#    print(f"Test AUC: {auc:.4f}")
     print(f"Test Accuracy: {accuracy:.4f}")
     print(f"Test Precision: {precision:.4f}")
     print(f"Test Recall: {recall:.4f}")
     print(f"Test F1 Score: {f1:.4f}")
+    auc = 0.0
     return(auc, accuracy, precision, recall, f1)
 
 
@@ -256,13 +283,19 @@ def train_model(model, train_loader, test_loader, criterion, optimizer, input_cl
     model.train()
     best_loss = float('inf')
     epochs_no_improve = 0
-    patience = 1
+    patience = 10
     for epoch in range(num_epochs):
         running_loss = 0.0
         for inputs, labels in train_loader:
             inputs, labels = inputs.float().to(device), labels.to(device)
+ #           print("input shape")
+ #           print(inputs.shape)
+ #           print(labels.shape)
             optimizer.zero_grad()
+            assert not torch.isnan(inputs).any(), "Inputs contain NaN values"
             outputs = model(inputs)
+#            print(inputs)
+#            print(outputs)
             loss = criterion(outputs, labels)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -273,19 +306,19 @@ def train_model(model, train_loader, test_loader, criterion, optimizer, input_cl
         auc, accuracy, precision, recall, f1 = evaluate_model(model, test_loader, input_classes)
 
         # Early stopping
-        if 1-accuracy < best_loss:
-            best_loss = 1-accuracy
-            epochs_no_improve = 0
-            torch.save(model.state_dict(), "convnet1d_model_best.pth")
-        else:
-            epochs_no_improve += 1
-            if epochs_no_improve == patience:
-                print("Early stopping triggered.")
-                break
+#        if 1-accuracy < best_loss:
+#            best_loss = 1-accuracy
+#            epochs_no_improve = 0
+#            torch.save(model.state_dict(), "convnet1d_model_best.pth")
+#        else:
+#            epochs_no_improve += 1
+#            if epochs_no_improve == patience:
+#                print("Early stopping triggered.")
+#                break
 
     torch.save(model.state_dict(), "convnet1d_model.pth")
 
 train_loader, test_loader = split_dataset(dataset)
-train_loader, test_loader = DataLoader(train_loader, batch_size=32, shuffle=True), DataLoader(test_loader, batch_size=32, shuffle=True)
-train_model(model, train_loader, test_loader, criterion, optimizer, input_classes, num_epochs=10)
+train_loader, test_loader = DataLoader(train_loader, batch_size=16, shuffle=True), DataLoader(test_loader, batch_size=16, shuffle=True)
+train_model(model, train_loader, test_loader, criterion, optimizer, input_classes, num_epochs=100)
 #evaluate_model(model, test_loader)
