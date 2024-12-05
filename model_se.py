@@ -44,6 +44,26 @@ class SE1DCNN(nn.Module):
         x = self.fc(x)
         return x
 
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=1, gamma=2, reduction='sum'):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        probs = F.softmax(inputs, dim=1)
+        probs = probs.gather(1, targets.view(-1, 1)).squeeze(1)
+        focal_weight = (1 - probs) ** self.gamma
+        loss = -self.alpha * focal_weight * torch.log(probs)
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        else:
+            return loss
+
+
 # Initialize the model, loss function, and optimizer
 if torch.cuda.is_available():
     print("CUDA GPU is available.")
@@ -53,9 +73,9 @@ else:
 features_path = "Hsapiens_features.txt"
 #dir = "../test_ls/"
 dir = "../learning_set/liver/"
-input_dim, n_clusters, dataset = dataset.load_data(dir, features_path)
+input_dim, n_clusters, dataset, weights = dataset.load_data(dir, features_path)
 train_loader, test_loader = random_split(dataset, [int(0.8 * len(dataset)), len(dataset) - int(0.8 * len(dataset))])
-train_loader, test_loader = DataLoader(train_loader, batch_size=32, shuffle=True), DataLoader(test_loader, batch_size=32, shuffle=True)
+train_loader, test_loader = DataLoader(train_loader, batch_size=16, shuffle=True), DataLoader(test_loader, batch_size=16, shuffle=True)
 
 def evaluate_model(model, test_loader):
     model.eval()
@@ -85,18 +105,20 @@ def evaluate_model(model, test_loader):
     print(f"Test F1 Score: {f1:.4f}")
     return auc, accuracy, precision, recall, f1
 
-hidden_dim = 32
+hidden_dim = 64
 model = SE1DCNN(input_dim, hidden_dim, n_clusters)
 
-# Initialize optimizer and loss function
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Initialize optimizer and loss function
+criterion = nn.CrossEntropyLoss(weight=weights.to(device))
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
+
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = model.to(device)
 
 # Training loop
-epochs = 50
+epochs = 200
+max = 0
 for epoch in range(epochs):
     model.train()
     total_loss = 0
@@ -114,7 +136,11 @@ for epoch in range(epochs):
         
         total_loss += loss.item()
     print(f"Epoch [{epoch + 1}/{epochs}], Loss: {total_loss / len(train_loader):.4f}")
-    evaluate_model(model, test_loader)
+    auc, acc, precision, recall, f1 = evaluate_model(model, test_loader)
+    if (acc > max):
+        max = acc
+        torch.save(model.state_dict(), f"se.pth")
+        print("model saved")
 
 # Evaluation function
 

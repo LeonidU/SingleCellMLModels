@@ -5,7 +5,7 @@ import dataset
 from torch.utils.data import DataLoader, random_split
 
 class WaveNet(nn.Module):
-    def __init__(self, input_length, n_classes, n_blocks=2, n_layers=4, residual_channels=8, skip_channels=8, kernel_size=2):
+    def __init__(self, input_length, n_classes, n_blocks=6, n_layers=6, residual_channels=8, skip_channels=8, kernel_size=3):
         super(WaveNet, self).__init__()
         self.residual_layers = nn.ModuleList()
         self.skip_layers = nn.ModuleList()
@@ -48,16 +48,32 @@ def split_dataset(dataset, train_ratio=0.8):
     test_size = len(dataset) - train_size
     return random_split(dataset, [train_size, test_size])
 
+def evalute_model(model, test_loader, device):
+     model.eval()
+     correct = 0
+     total = 0
+     with torch.no_grad():
+          for inputs, labels in test_loader:
+               inputs, labels = inputs.to(device), labels.to(device)
+               outputs = model(inputs)
+               _, predicted = torch.max(outputs, 1)
+               total += labels.size(0)
+               correct += (predicted == labels).sum().item()
+     accuracy = 100 * correct / total
+     print(f'Test Accuracy: {accuracy:.2f}%')
+     return(accuracy)
+
+
 # Initialize the model, criterion, and optimizer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 features_path = "Hsapiens_features.txt"
 #dir = "../learning_set/lung/"
-dir = "../test_ls/"
-input_length, input_classes, dataset = dataset.load_data(dir, features_path)
+dir = "../learning_set/liver/"
+input_length, input_classes, dataset, weight = dataset.load_data(dir, features_path)
 train_loader, test_loader = split_dataset(dataset)
 n_classes = input_classes
-train_loader, test_loader = DataLoader(train_loader, batch_size=32, shuffle=True), DataLoader(test_loader, batch_size=32, shuffle=True)
+train_loader, test_loader = DataLoader(train_loader, batch_size=16, shuffle=True), DataLoader(test_loader, batch_size=16, shuffle=True)
 
 # input_features, input_classes, dataset
 
@@ -65,24 +81,37 @@ print(f"input classes : {input_classes}")
 print(f"input length : {input_length}")
 
 model = WaveNet(input_length=input_length, n_classes=n_classes).to(device)
-criterion = nn.CrossEntropyLoss()
+criterion = nn.CrossEntropyLoss(weight=weight.to(device))
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Training loop
-epochs = 500
+epochs = 600
+max = 0.0
 for epoch in range(epochs):
     model.train()
     running_loss = 0.0
+    correct = 0.0
+    n = 0
     for inputs, labels in train_loader:
         inputs, labels = inputs.to(device), labels.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
-        loss = criterion(outputs, labels)
+        loss = criterion(outputs.to(device), labels.to(device))
         loss.backward()
         optimizer.step()
         running_loss += loss.item()
+        _, predicted = torch.max(outputs, 1)
+#        correct += (predicted == labels).sum().item()
+#        n += len(labels)
+    acc = evalute_model(model, test_loader, device)
+#    print(f"Accurancy {correct/n}")
+    if (acc > max):
+        max = acc
+        torch.save(model.state_dict(), f"wavenet.pth")
+        print("model saved")
     print(f"Epoch [{epoch+1}/{epochs}], Loss: {running_loss/len(train_loader):.4f}")
 
+"""
 # Evaluation
 model.eval()
 correct = 0
@@ -98,3 +127,4 @@ with torch.no_grad():
 accuracy = 100 * correct / total
 print(f'Test Accuracy: {accuracy:.2f}%')
 
+"""

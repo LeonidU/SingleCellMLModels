@@ -54,56 +54,30 @@ class TCN(nn.Module):
         y1 = y1.mean(dim=2)  # Global average pooling
         return self.linear(y1)
 
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=1, gamma=2, reduction='sum'):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        probs = F.softmax(inputs, dim=1)
+        probs = probs.gather(1, targets.view(-1, 1)).squeeze(1)
+        focal_weight = (1 - probs) ** self.gamma
+        loss = -self.alpha * focal_weight * torch.log(probs)
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        else:
+            return loss
 
 def split_dataset(dataset, train_ratio=0.8):
     train_size = int(train_ratio * len(dataset))
     test_size = len(dataset) - train_size
     return random_split(dataset, [train_size, test_size])
 
-# Initialize the model, loss function, and optimizer
-if torch.cuda.is_available():
-    print("CUDA GPU is available.")
-else:
-    print("CUDA GPU is not available.")
-
-features_path = "Hsapiens_features.txt"
-dir = "../test_ls/"
-input_dim, n_clusters, dataset = dataset.load_data(dir, features_path)
-train_loader, test_loader = split_dataset(dataset)
-train_loader, test_loader = DataLoader(train_loader, batch_size=32, shuffle=True), DataLoader(test_loader, batch_size=32, shuffle=True)
-
-# Model parameters
-hidden_dim = 64
-num_channels = [hidden_dim] * 3  # Three layers with the same number of channels
-kernel_size = 3
-dropout = 0.2
-
-# Create TCN model
-model = TCN(num_inputs=input_dim, num_channels=num_channels, kernel_size=kernel_size, dropout=dropout)
-
-# Training setup
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = model.to(device)
-
-# Training loop
-epochs = 20
-for epoch in range(epochs):
-    total_loss = 0
-    model.train()
-    for data, labels in train_loader:
-        data, labels = data.to(device), labels.to(device)
-        data = data.unsqueeze(1)  # Add channel dimension
-        outputs = model(data)
-        loss = criterion(outputs, labels)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
-    print(f"Epoch [{epoch+1}/{epochs}], Loss: {total_loss / len(train_loader):.4f}")
-
-# Evaluation
 def evaluate_model(model, test_loader):
     model.eval()
     all_labels = []
@@ -121,18 +95,71 @@ def evaluate_model(model, test_loader):
     predicted_labels = np.argmax(all_outputs_np, axis=1)
 
     # Calculate metrics
-    auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
+#    auc = roc_auc_score(all_labels_np, all_outputs_np, multi_class='ovr')
     accuracy = accuracy_score(all_labels_np, predicted_labels)
     precision = precision_score(all_labels_np, predicted_labels, average='weighted')
     recall = recall_score(all_labels_np, predicted_labels, average='weighted')
     f1 = f1_score(all_labels_np, predicted_labels, average='weighted')
 
-    print(f"Test AUC: {auc:.4f}")
+#    print(f"Test AUC: {auc:.4f}")
     print(f"Test Accuracy: {accuracy:.4f}")
     print(f"Test Precision: {precision:.4f}")
     print(f"Test Recall: {recall:.4f}")
     print(f"Test F1 Score: {f1:.4f}")
-    return auc, accuracy, precision, recall, f1
+    return 0.0, accuracy, precision, recall, f1
 
-evaluate_model(model, test_loader)
+
+# Initialize the model, loss function, and optimizer
+if torch.cuda.is_available():
+    print("CUDA GPU is available.")
+else:
+    print("CUDA GPU is not available.")
+
+features_path = "Hsapiens_features.txt"
+dir = "../learning_set/liver/"
+input_dim, n_clusters, dataset, weight = dataset.load_data(dir, features_path)
+train_loader, test_loader = split_dataset(dataset)
+train_loader, test_loader = DataLoader(train_loader, batch_size=32, shuffle=True), DataLoader(test_loader, batch_size=32, shuffle=True)
+
+# Model parameters
+hidden_dim = 64
+num_channels = [hidden_dim] * 3  # Three layers with the same number of channels
+kernel_size = 3
+dropout = 0.2
+
+# Create TCN model
+model = TCN(num_inputs=input_dim, num_channels=num_channels, kernel_size=kernel_size, dropout=dropout)
+
+# Training setup
+#criterion = FocalLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.00005)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = model.to(device)
+criterion = nn.CrossEntropyLoss(weight=weight.to(device))
+
+# Training loop
+epochs = 400
+max = 0
+for epoch in range(epochs):
+    total_loss = 0
+    model.train()
+    for data, labels in train_loader:
+        data, labels = data.to(device), labels.to(device)
+        data = data.unsqueeze(1)  # Add channel dimension
+        outputs = model(data)
+        loss = criterion(outputs, labels)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+    print(f"Epoch [{epoch+1}/{epochs}], Loss: {total_loss / len(train_loader):.4f}")
+    _, acc, precision, recall, f1 = evaluate_model(model, test_loader)
+    if (acc > max):
+        max = acc
+        torch.save(model.state_dict(), f"wavenet.pth")
+        print("model saved")
+
+
+
+#evaluate_model(model, test_loader)
 

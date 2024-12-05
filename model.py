@@ -7,8 +7,8 @@ import dataset
 import numpy as np
 from torcheval.metrics import MulticlassAUROC
 import torch.nn.functional as F
-# Define the 1D CNN model
 
+# Define the 1D CNN model
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1):
         super(ResidualBlock, self).__init__()
@@ -27,30 +27,26 @@ class ResidualBlock(nn.Module):
     def forward(self, x):
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
-        out += self.shortcut(x)
+        if self.shortcut:
+            x = self.shortcut(x)
+        out += x
         out = F.relu(out)
         return out
 
 class SingleCellResNet(nn.Module):
     def __init__(self, input_features, num_classes):
         super(SingleCellResNet, self).__init__()
-        # Embedding layer to reduce dimensionality
-        self.embedding_layer = nn.Linear(input_features, 512, bias=True)
-        self.em_batch_norm =  nn.BatchNorm1d(512)
         self.input_layer = nn.Sequential(
-            nn.Conv1d(1, 128, kernel_size=7, stride=2, padding=3),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-            nn.MaxPool1d(kernel_size=3, stride=2, padding=1),
+            nn.Conv1d(1, 64, kernel_size=7, stride=2, padding=3),
+            nn.BatchNorm1d(64),
             nn.ReLU(),
             nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
         )
 
-        self.layer1 = self._make_layer(128, 128, num_blocks=2, stride=1)
+        self.layer1 = self._make_layer(64, 128, num_blocks=2, stride=1)
         self.layer2 = self._make_layer(128, 256, num_blocks=2, stride=2)
         self.layer3 = self._make_layer(256, 512, num_blocks=2, stride=2)
         self.layer4 = self._make_layer(512, 1024, num_blocks=2, stride=2)
-#        self.layer5 = self._make_layer(1024, 2048, num_blocks=2, stride=2)
 
         self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
         self.fc = nn.Linear(1024, num_classes)
@@ -63,20 +59,16 @@ class SingleCellResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        x = self.embedding_layer(x)  # Map to lower-dimensional space
-        x = self.em_batch_norm(x)
         x = x.unsqueeze(1)  # Add channel dimension if necessary
         x = self.input_layer(x)
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
-#        x = self.layer5(x)
         x = self.global_avg_pool(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
         return x
-
 
 class FocalLoss(nn.Module):
     def __init__(self, alpha=1, gamma=2, reduction='mean'):
@@ -98,7 +90,6 @@ class FocalLoss(nn.Module):
             return loss
 
 
-
 def split_dataset(dataset, train_ratio=0.8):
     train_size = int(train_ratio * len(dataset))
     test_size = len(dataset) - train_size
@@ -110,90 +101,32 @@ def weights_init(m):
         if m.bias is not None:
             nn.init.constant_(m.bias, 0)
 
-class AUCLoss(nn.Module):
-    def __init__(self, num_classes):
-        super(AUCLoss, self).__init__()
-        self.auroc = MulticlassAUROC(num_classes=num_classes, average='macro')
-
-    def forward(self, y_pred, y_true):
-        y_pred = F.softmax(y_pred, dim=1)
-        auc = self.auroc.update(y_pred, y_true)
-        return (1 - auc.compute()).requires_grad_()
-
-# Initialize the model, loss function, and optimizer
-if torch.cuda.is_available():
-    print("CUDA GPU is available.")
-else:
-    print("CUDA GPU is not available.")
-
-#mtx_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx"
-#colnames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_cols"
-#cells_path = "../E-ANND-2/E-ANND-2.cells.txt"
-#rownames_path = "../E-ANND-2/E-ANND-2.aggregated_filtered_normalised_counts.mtx_rows"
-features_path = "Hsapiens_features.txt"
-dir = "../learning_set/liver/" 
-#dir = "../test_ls/"
-input_length, input_classes, dataset = dataset.load_data(dir, features_path)
-print("Dataset dimensionality")
-print(dataset.nrow())
-print(dataset.ncol())
-# input_features, input_classes, dataset
-
-print("input_classes:", input_classes)
-print("input_length:", input_length)
-#dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(device)
-model = SingleCellResNet(input_features=input_length,  num_classes=input_classes)
-model.apply(weights_init)
-
-model = model.to(device)
-
-criterion = FocalLoss()
-#= nn.CrossEntropyLoss()
-
-#criterion = AUCLoss(input_classes)
-optimizer = optim.Adam(model.parameters(), lr=0.0001)
-
 def evaluate_model(model, test_loader, size):
     model.eval()
     all_labels = []
     all_outputs = []
-    correct,n = 0.0, 0
+    correct, n = 0.0, 0
     with torch.no_grad():
         for vectors, labels in test_loader:
-#            print(vectors)
             vectors, labels = vectors.to(device), labels.to(device)
-
-            # Forward pass
             outputs = model(vectors)
-#            print(outputs)
-#            print(labels)
             all_labels.extend(labels.cpu().numpy())
             all_outputs.extend(np.array(np.argmax(outputs.cpu().numpy(), axis=1)))
             predicted = np.array(np.argmax(outputs.cpu().numpy(), axis=1))
-            print(predicted)
-            print(labels)
             correct += (predicted == labels.cpu().numpy()).sum().item()
             n += labels.size(0)
-    # Convert outputs to predicted labels
     all_outputs_np = np.array(all_outputs)
     all_labels_np = np.array(all_labels)
-
-    # Calculate metrics
-    f1 = f1_score(all_labels_np, all_outputs_np, average='weighted')  # You can change 'weighted' to 'micro', 'macro', etc.
+    f1 = f1_score(all_labels_np, all_outputs_np, average='weighted')
     accuracy = accuracy_score(all_labels_np, all_outputs_np)
     recall = recall_score(all_labels_np, all_outputs_np, average='weighted')
     precision = precision_score(all_labels_np, all_outputs_np, average='weighted')
-#    print(f"Test AUC: {auc:.4f}")
     print(f"Test Accuracy: {accuracy:.4f}")
     print(f"Test Precision: {precision:.4f}")
     print(f"Test Recall: {recall:.4f}")
     print(f"Test F1 Score: {f1:.4f}")
     auc = 0.0
-    return(auc, accuracy, precision, recall, f1)
-
+    return auc, accuracy, precision, recall, f1
 
 def train_model(model, train_loader, test_loader, criterion, optimizer, input_classes, num_epochs=20, patience=5):
     model.train()
@@ -215,21 +148,24 @@ def train_model(model, train_loader, test_loader, criterion, optimizer, input_cl
         epoch_loss = running_loss / len(train_loader.dataset)
         print(f'Epoch {epoch+1}, Loss: {epoch_loss:.4f}')
         auc, accuracy, precision, recall, f1 = evaluate_model(model, test_loader, input_classes)
-
-        # Early stopping
-#        if 1-accuracy < best_loss:
-#            best_loss = 1-accuracy
-#            epochs_no_improve = 0
-#            torch.save(model.state_dict(), "convnet1d_model_best.pth")
-#        else:
-#            epochs_no_improve += 1
-#            if epochs_no_improve == patience:
-#                print("Early stopping triggered.")
-#                break
-
     torch.save(model.state_dict(), "convnet1d_model.pth")
+
+features_path = "Hsapiens_features.txt"
+dir = "../learning_set/liver/"
+input_length, input_classes, dataset, weights = dataset.load_data(dir, features_path)
+print("input_classes:", input_classes)
+print("input_length:", input_length)
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
+model = SingleCellResNet(input_features=input_length, num_classes=input_classes)
+#model.apply(weights_init)
+model = model.to(device)
+criterion = nn.CrossEntropyLoss(weight=weights.to(device))
+#FocalLoss(alpha=1.9, gamma=2.6)
+optimizer = optim.Adam(model.parameters(), lr=0.0005)
 
 train_loader, test_loader = split_dataset(dataset)
 train_loader, test_loader = DataLoader(train_loader, batch_size=16, shuffle=True), DataLoader(test_loader, batch_size=16, shuffle=True)
-train_model(model, train_loader, test_loader, criterion, optimizer, input_classes, num_epochs=100)
-#evaluate_model(model, test_loader)
+train_model(model, train_loader, test_loader, criterion, optimizer, input_classes, num_epochs=200)
+
